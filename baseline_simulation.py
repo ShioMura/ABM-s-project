@@ -12,6 +12,7 @@ import numpy as np
 class Strategy:
     name: str
     bias: float
+    theta_heatmap: float
     theta_move_ratio: float
     theta_density: float
     theta_risk: float
@@ -19,10 +20,10 @@ class Strategy:
 
 
 STRATEGIES = [
-    Strategy("conservative", bias=-1.1, theta_move_ratio=0.2, theta_density=1.2, theta_risk=0.4, theta_payoff_gap=0.7),
-    Strategy("imitator", bias=-0.4, theta_move_ratio=2.0, theta_density=0.4, theta_risk=0.6, theta_payoff_gap=0.4),
-    Strategy("crowd_avoider", bias=-0.3, theta_move_ratio=0.1, theta_density=2.0, theta_risk=0.5, theta_payoff_gap=0.7),
-    Strategy("explorer", bias=0.0, theta_move_ratio=0.5, theta_density=0.3, theta_risk=1.0, theta_payoff_gap=0.3),
+    Strategy("conservative", bias=-1.1, theta_heatmap=0.3, theta_move_ratio=0.2, theta_density=1.2, theta_risk=0.4, theta_payoff_gap=0.7),
+    Strategy("imitator", bias=-0.4, theta_heatmap=0.6, theta_move_ratio=2.0, theta_density=0.4, theta_risk=0.6, theta_payoff_gap=0.4),
+    Strategy("crowd_avoider", bias=-0.3, theta_heatmap=0.6, theta_move_ratio=0.1, theta_density=2.0, theta_risk=0.5, theta_payoff_gap=0.7),
+    Strategy("explorer", bias=0.0, theta_heatmap=1.2, theta_move_ratio=0.5, theta_density=0.3, theta_risk=1.0, theta_payoff_gap=0.3),
 ]
 
 
@@ -59,6 +60,40 @@ def local_sum(matrix: np.ndarray, x: int, y: int) -> float:
     xs = slice(max(0, x - 1), min(matrix.shape[0], x + 2))
     ys = slice(max(0, y - 1), min(matrix.shape[1], y + 2))
     return float(matrix[xs, ys].sum())
+
+
+def local_mean(matrix: np.ndarray, x: int, y: int) -> float:
+    xs = slice(max(0, x - 1), min(matrix.shape[0], x + 2))
+    ys = slice(max(0, y - 1), min(matrix.shape[1], y + 2))
+    return float(matrix[xs, ys].mean())
+
+
+def normalize_heatmap(raw_heatmap: np.ndarray) -> np.ndarray:
+    min_value = float(raw_heatmap.min())
+    max_value = float(raw_heatmap.max())
+    if np.isclose(max_value, min_value):
+        return np.zeros_like(raw_heatmap, dtype=float)
+    return (raw_heatmap - min_value) / (max_value - min_value)
+
+
+def compute_heatmap(
+    scenario: str,
+    new_orders: np.ndarray,
+    queued_orders: np.ndarray,
+    rider_counts: np.ndarray,
+    alpha: float,
+    gamma: float,
+    beta: float,
+) -> np.ndarray:
+    if scenario == "baseline":
+        return np.zeros_like(new_orders, dtype=float)
+    if scenario == "demand_only":
+        raw_heatmap = alpha * new_orders
+    elif scenario == "supply_adjusted":
+        raw_heatmap = alpha * new_orders + gamma * queued_orders - beta * rider_counts
+    else:
+        raise ValueError(f"Unknown scenario: {scenario}")
+    return normalize_heatmap(raw_heatmap.astype(float))
 
 
 def memory_weights(memory_length: int, memory_decay: float) -> np.ndarray:
@@ -130,6 +165,7 @@ def choose_destination(
     x: int,
     y: int,
     rider_counts: np.ndarray,
+    heatmap: np.ndarray,
     strategy: Strategy,
     rng: np.random.Generator,
     kappa: float,
@@ -141,13 +177,14 @@ def choose_destination(
     for nx, ny in candidates:
         density = rider_counts[nx, ny] / max_density
         noise = rng.normal(0.0, 0.05)
-        attractions.append(-strategy.theta_density * density + noise)
+        attractions.append(strategy.theta_heatmap * heatmap[nx, ny] - strategy.theta_density * density + noise)
 
     probabilities = softmax(np.array(attractions), kappa)
     return candidates[int(rng.choice(len(candidates), p=probabilities))]
 
 
-def run_baseline(
+def run_simulation(
+    scenario: str = "baseline",
     grid_size: int = 10,
     n_riders: int = 200,
     steps: int = 144,
@@ -157,6 +194,9 @@ def run_baseline(
     memory_decay: float = 0.7,
     payoff_memory_rate: float = 0.2,
     aspiration_income: float = 5.5,
+    heatmap_alpha: float = 1.0,
+    heatmap_gamma: float = 0.5,
+    heatmap_beta: float = 1.0,
     fare: float = 10.0,
     move_cost: float = 1.0,
     learning_rate: float = 0.2,
@@ -184,6 +224,16 @@ def run_baseline(
 
         new_orders = rng.poisson(order_lambda, size=(grid_size, grid_size))
         rider_counts_before = count_riders(positions, grid_size)
+        queued_orders = queue_by_age.sum(axis=2)
+        heatmap = compute_heatmap(
+            scenario,
+            new_orders,
+            queued_orders,
+            rider_counts_before,
+            heatmap_alpha,
+            heatmap_gamma,
+            heatmap_beta,
+        )
 
         chosen_strategies = np.zeros(n_riders, dtype=int)
         moved = np.zeros(n_riders, dtype=bool)
@@ -209,9 +259,11 @@ def run_baseline(
                 memory_length,
                 memory_decay,
             )
+            local_heatmap = local_mean(heatmap, x, y)
 
             move_logit = (
                 strategy.bias
+                + strategy.theta_heatmap * local_heatmap
                 + strategy.theta_move_ratio * local_move_ratio
                 - strategy.theta_density * local_density
                 + strategy.theta_risk * risks[i]
@@ -224,6 +276,7 @@ def run_baseline(
                     x,
                     y,
                     rider_counts_before,
+                    heatmap,
                     strategy,
                     rng,
                     destination_kappa,
@@ -283,11 +336,13 @@ def run_baseline(
 
         row = {
             "step": t,
+            "scenario": scenario,
             "avg_income": float(payoffs.mean()),
             "idle_rate": float(1.0 - matched.mean()),
             "movement_rate": float(moved.mean()),
             "matching_rate": float(total_matched / total_available_orders) if total_available_orders else 1.0,
             "congestion_frequency": float(congested_zones.mean()),
+            "avg_heatmap": float(heatmap.mean()),
             "recent_payoff_mean": float(recent_payoffs.mean()),
             "avg_queue": float(queue_by_age.sum(axis=2).mean()),
             "expired_orders": float(expired_orders.sum()),
@@ -309,7 +364,8 @@ def write_metrics(metrics: list[dict[str, float]], output_path: Path) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Run the no-heatmap baseline simulation.")
+    parser = argparse.ArgumentParser(description="Run the food-delivery rider relocation simulation.")
+    parser.add_argument("--scenario", choices=["baseline", "demand_only", "supply_adjusted"], default="baseline")
     parser.add_argument("--grid-size", type=int, default=10)
     parser.add_argument("--riders", type=int, default=200)
     parser.add_argument("--steps", type=int, default=144)
@@ -319,11 +375,15 @@ def main() -> None:
     parser.add_argument("--memory-decay", type=float, default=0.7)
     parser.add_argument("--payoff-memory-rate", type=float, default=0.2)
     parser.add_argument("--aspiration-income", type=float, default=5.5)
+    parser.add_argument("--heatmap-alpha", type=float, default=1.0)
+    parser.add_argument("--heatmap-gamma", type=float, default=0.5)
+    parser.add_argument("--heatmap-beta", type=float, default=1.0)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--output", type=Path, default=Path("outputs/baseline_metrics.csv"))
     args = parser.parse_args()
 
-    metrics = run_baseline(
+    metrics = run_simulation(
+        scenario=args.scenario,
         grid_size=args.grid_size,
         n_riders=args.riders,
         steps=args.steps,
@@ -333,12 +393,15 @@ def main() -> None:
         memory_decay=args.memory_decay,
         payoff_memory_rate=args.payoff_memory_rate,
         aspiration_income=args.aspiration_income,
+        heatmap_alpha=args.heatmap_alpha,
+        heatmap_gamma=args.heatmap_gamma,
+        heatmap_beta=args.heatmap_beta,
         seed=args.seed,
     )
     write_metrics(metrics, args.output)
 
     final = metrics[-1]
-    print("Baseline simulation complete.")
+    print(f"{args.scenario} simulation complete.")
     print(f"Metrics written to: {args.output}")
     print(f"Final average income: {final['avg_income']:.3f}")
     print(f"Final idle rate: {final['idle_rate']:.3f}")

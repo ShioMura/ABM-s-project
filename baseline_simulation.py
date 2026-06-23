@@ -332,6 +332,12 @@ def run_simulation(
         total_matched = int(matched.sum())
         congested_zones = rider_counts_after > available_orders
         rider_share = rider_counts_after.flatten() / n_riders
+        rider_density_mean = float(rider_counts_after.mean())
+        rider_density_cv = (
+            float(rider_counts_after.std() / rider_density_mean)
+            if rider_density_mean > 0
+            else 0.0
+        )
         strategy_counts = np.bincount(chosen_strategies, minlength=len(STRATEGIES)) / n_riders
 
         row = {
@@ -347,6 +353,7 @@ def run_simulation(
             "avg_queue": float(queue_by_age.sum(axis=2).mean()),
             "expired_orders": float(expired_orders.sum()),
             "rider_concentration_hhi": float(np.sum(rider_share**2)),
+            "rider_density_cv": rider_density_cv,
         }
         for idx, strategy in enumerate(STRATEGIES):
             row[f"strategy_{strategy.name}"] = float(strategy_counts[idx])
@@ -378,6 +385,7 @@ def main() -> None:
     parser.add_argument("--heatmap-alpha", type=float, default=1.0)
     parser.add_argument("--heatmap-gamma", type=float, default=0.5)
     parser.add_argument("--heatmap-beta", type=float, default=1.0)
+    parser.add_argument("--move-cost", type=float, default=1.0)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--output", type=Path, default=Path("outputs/baseline_metrics.csv"))
     args = parser.parse_args()
@@ -396,6 +404,7 @@ def main() -> None:
         heatmap_alpha=args.heatmap_alpha,
         heatmap_gamma=args.heatmap_gamma,
         heatmap_beta=args.heatmap_beta,
+        move_cost=args.move_cost,
         seed=args.seed,
     )
     write_metrics(metrics, args.output)

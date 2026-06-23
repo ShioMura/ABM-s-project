@@ -17,7 +17,7 @@ METRICS = {
     "matching_rate": "Matching rate",
     "movement_rate": "Movement rate",
     "congestion_frequency": "Congestion frequency",
-    "rider_concentration_hhi": "Rider concentration (HHI)",
+    "rider_density_cv": "Rider density CV",
 }
 
 COLORS = {

@@ -13,6 +13,7 @@ keys = [
     "matching_rate",
     "movement_rate",
     "congestion_frequency",
+    "rider_density_cv",
     "rider_concentration_hhi",
 ]
 

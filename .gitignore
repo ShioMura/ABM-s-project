@@ -7,6 +7,7 @@ venv/
 
 # Raw multi-seed simulation outputs
 outputs/seeds/*_seed[0-9]*.csv
+outputs/seeds/multi_seed_summary_quick.csv
 !outputs/seeds/multi_seed_summary.csv
 
 # Raw sensitivity outputs

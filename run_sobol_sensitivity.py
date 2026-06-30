@@ -25,7 +25,6 @@ from baseline_simulation import run_simulation
 
 
 # Three-parameter Sobol analysis:
-# alpha is fixed at 1.0 as the reference demand weight.
 
 PROBLEM = {
     "num_vars": 3,

@@ -5,8 +5,11 @@ __pycache__/
 .venv/
 venv/
 
-# Raw simulation outputs
-outputs/seeds/*_seed*.csv
+# Raw multi-seed simulation outputs
+outputs/seeds/*_seed[0-9]*.csv
+!outputs/seeds/multi_seed_summary.csv
+
+# Raw sensitivity outputs
 outputs/sensitivity/**/raw/
 outputs/sobol*/raw/
 outputs/sobol*/sobol_raw_runs.csv

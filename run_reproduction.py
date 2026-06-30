@@ -55,7 +55,21 @@ def main() -> None:
     ])
 
     seed_values = [str(seed) for seed in range(1, n_seeds + 1)]
-    run([python, "summarize_multi_seed.py", "--seeds", *seed_values])
+    
+    summary_output = (
+        Path("outputs/seeds/multi_seed_summary_quick.csv")
+        if args.quick
+        else Path("outputs/seeds/multi_seed_summary.csv")
+    )
+
+    run([
+        python,
+        "summarize_multi_seed.py",
+        "--output",
+        str(summary_output),
+        "--seeds",
+        *seed_values,
+    ])
 
     if args.include_sensitivity:
         sensitivity_seeds = "3" if args.quick else "10"

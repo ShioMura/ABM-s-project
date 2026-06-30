@@ -1,0 +1,21 @@
+__pycache__/
+*.pyc
+
+# Python virtual environments
+.venv/
+venv/
+
+# Raw simulation outputs
+outputs/seeds/*_seed*.csv
+outputs/sensitivity/**/raw/
+outputs/sobol*/raw/
+outputs/sobol*/sobol_raw_runs.csv
+
+# Old calibration or test outputs
+outputs/baseline_asp*.csv
+outputs/baseline_metrics.csv
+
+# Local editor/system files
+.DS_Store
+Thumbs.db
+.vscode/
